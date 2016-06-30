@@ -37,7 +37,13 @@ except ImportError:
 
 if 'setuptools.extension' in sys.modules:
     m = sys.modules['setuptools.extension']
-    m.Extension.__dict__ = m._Extension.__dict__
+    for attr, val in m._Extension.__dict__.items():
+        try:
+            setattr(m.Extension, attr, val)
+        except BaseException as  e:
+            # print(e)
+            pass
+    # m.Extension.__dict__ = m._Extension.__dict__
 
 version_py = os.path.join(os.path.dirname(__file__), 'cyvcf', 'version.py')
 version = open(version_py).read().strip().split('=')[-1].replace('"','')
