@@ -4,6 +4,9 @@ import csv
 import gzip
 import sys
 import itertools
+import operator
+import codecs
+file=open
 
 try:
     import pysam
@@ -439,6 +442,13 @@ cdef class _Record(object):
                     self.POS == other.POS and
                     self.REF == other.REF and
                     self.ALT == other.ALT)
+        elif op == 3:
+            return not self.__richcmp__(other, 2)
+        else:
+            ops = { 0: operator.lt, 1: operator.le, 
+                    2: operator.eq, 3: operator.ne,
+                    4: operator.gt, 5: operator.ge }
+            return  ops[op]( (self.CHROM, self.POS), (other.CHROM, other.POS) )
 
     def __iter__(self):
         return iter(self.samples)
@@ -480,8 +490,8 @@ cdef class _Record(object):
                           self._format_qual() or '.', self.FILTER or '.', self._format_info()])
 
 
-    def __cmp__(self, other):
-        return cmp( (self.CHROM, self.POS), (other.CHROM, other.POS))
+    # def __cmp__(self, other):
+    #     return cmp( (self.CHROM, self.POS), (other.CHROM, other.POS))
 
     def add_format(self, fmt):
         tmp = self.FORMAT + ':' + fmt
@@ -736,7 +746,7 @@ cdef class Reader(object):
     cdef public _Record curr_record
 
     def __init__(self, fsock=None, filename=None,
-                        bint compressed=False, bint prepend_chr=False):
+                        bint compressed=False, bint prepend_chr=False, encoding='ascii'):
         """ Create a new Reader for a VCF file.
 
             You must specify a filename.  Gzipped streams
@@ -748,20 +758,22 @@ cdef class Reader(object):
         if not (fsock or filename):
             raise Exception('You must provide at least fsock or filename')
 
-        if filename:
-            self.filename = filename
-            if fsock is None:
-                self.reader = file(filename)
-
         if fsock:
-            self.reader = fsock
-            if filename is None:
-                if hasattr(fsock, 'name'):
-                    filename = fsock.name
-            self.filename = filename
-
-        if compressed or (filename and filename.endswith('.gz')):
+            self._reader = fsock
+            if filename is None and hasattr(fsock, 'name'):
+                filename = fsock.name
+                if compressed is None:
+                    compressed = filename.endswith('.gz')
+        elif filename:
+            if compressed is None:
+                compressed = filename.endswith('.gz')
+            self.reader = open(filename, 'rb' if compressed else 'rt')
+        self.filename = filename
+        if compressed:
             self.reader = gzip.GzipFile(fileobj=self.reader)
+            if sys.version > '3':
+                self.reader = codecs.getreader(encoding)(self.reader)
+
 
         #: metadata fields from header
         self.metadata = {}
