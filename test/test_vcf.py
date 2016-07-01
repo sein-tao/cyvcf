@@ -2,7 +2,10 @@ import unittest
 import doctest
 import os
 import subprocess
-from io import StringIO
+try:
+    from StringIO import StringIO
+except ImportError: # py3
+    from io import StringIO
 
 import cyvcf
 from cyvcf import utils

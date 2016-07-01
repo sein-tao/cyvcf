@@ -826,7 +826,7 @@ cdef class Reader(object):
             self.filename = filename
 
         if compressed or (filename and filename.endswith('.gz')):
-            self.reader = gzip.GzipFile(fileobj=self.reader, mode='rb')
+            self.reader = gzip.GzipFile(fileobj=self.reader)
             if PY3:
                 self.reader = codecs.getreader(self.encoding)(self.reader)
 
