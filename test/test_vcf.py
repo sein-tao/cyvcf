@@ -6,6 +6,10 @@ from io import StringIO
 
 import cyvcf
 from cyvcf import utils
+import gzip
+
+import sys
+PY3 = sys.version_info > (3,)
 
 file=open
 
@@ -13,7 +17,10 @@ suite = doctest.DocTestSuite(cyvcf.parser)
 
 
 def fh(fname):
-    return file(os.path.join(os.path.dirname(__file__), fname))
+    path = os.path.join(os.path.dirname(__file__), fname)
+    if PY3 and fname.endswith(".gz"):
+        return file(path, 'rb')
+    return file(path)
 
 
 class TestVcfSpecs(unittest.TestCase):
@@ -196,6 +203,7 @@ class TestRecord(unittest.TestCase):
             num_calls = (var.num_hom_ref + var.num_hom_alt + \
                          var.num_het + var.num_unknown)
             self.assertEqual(len(var.samples), num_calls)
+        reader.close()
 
     def test_call_rate(self):
         reader = cyvcf.Reader(fh('example-4.0.vcf'))
@@ -211,6 +219,7 @@ class TestRecord(unittest.TestCase):
                 self.assertEqual(3.0/3.0, call_rate)
             elif var.POS == 1234567:
                 self.assertEqual(2.0/3.0, call_rate)
+        reader.close()
 
     def test_aaf(self):
         reader = cyvcf.Reader(fh('example-4.0.vcf'))
@@ -226,6 +235,7 @@ class TestRecord(unittest.TestCase):
                 self.assertEqual(0.0/6.0, aaf)
             elif var.POS == 1234567:
                 self.assertEqual(None, aaf)
+        reader.close()
 
     def test_pi(self):
         reader = cyvcf.Reader(fh('example-4.0.vcf'))
@@ -241,6 +251,7 @@ class TestRecord(unittest.TestCase):
                 self.assertEqual(0.0/6.0, pi)
             elif var.POS == 1234567:
                 self.assertEqual(None, pi)
+        reader.close()
 
     def test_is_snp(self):
         reader = cyvcf.Reader(fh('example-4.0.vcf'))
@@ -256,6 +267,7 @@ class TestRecord(unittest.TestCase):
                 self.assertEqual(False, is_snp)
             elif var.POS == 1234567:
                 self.assertEqual(False, is_snp)
+        reader.close()
 
     def test_is_indel(self):
         reader = cyvcf.Reader(fh('example-4.0.vcf'))
@@ -271,6 +283,7 @@ class TestRecord(unittest.TestCase):
                 self.assertEqual(True, is_indel)
             elif var.POS == 1234567:
                 self.assertEqual(True, is_indel)
+        reader.close()
 
     def test_is_transition(self):
         reader = cyvcf.Reader(fh('example-4.0.vcf'))
@@ -286,6 +299,7 @@ class TestRecord(unittest.TestCase):
                 self.assertEqual(False, is_trans)
             elif var.POS == 1234567:
                 self.assertEqual(False, is_trans)
+        reader.close()
 
     def test_is_deletion(self):
         reader = cyvcf.Reader(fh('example-4.0.vcf'))
@@ -301,6 +315,7 @@ class TestRecord(unittest.TestCase):
                 self.assertEqual(True, is_del)
             elif var.POS == 1234567:
                 self.assertEqual(False, is_del)
+        reader.close()
 
     def test_var_type(self):
         reader = cyvcf.Reader(fh('example-4.0.vcf'))
@@ -316,6 +331,7 @@ class TestRecord(unittest.TestCase):
                 self.assertEqual("indel", type)
             elif var.POS == 1234567:
                 self.assertEqual("indel", type)
+        reader.close()
         # SV tests
         reader = cyvcf.Reader(fh('example-4.1-sv.vcf'))
         for var in reader:
@@ -332,6 +348,7 @@ class TestRecord(unittest.TestCase):
                 self.assertEqual("sv", type)
             elif var.POS == 18665128:
                 self.assertEqual("sv", type)
+        reader.close()
 
 
     def test_var_subtype(self):
@@ -348,6 +365,7 @@ class TestRecord(unittest.TestCase):
                 self.assertEqual("del", subtype)
             elif var.POS == 1234567:
                 self.assertEqual("unknown", subtype)
+        reader.close()
         # SV tests
         reader = cyvcf.Reader(fh('example-4.1-sv.vcf'))
         for var in reader:
@@ -364,6 +382,7 @@ class TestRecord(unittest.TestCase):
                 self.assertEqual("DUP", subtype)
             elif var.POS == 18665128:
                 self.assertEqual("DUP:TANDEM", subtype)
+        reader.close()
 
     def test_is_sv(self):
         reader = cyvcf.Reader(fh('example-4.1-sv.vcf'))
@@ -381,6 +400,7 @@ class TestRecord(unittest.TestCase):
                 self.assertEqual(True, is_sv)
             elif var.POS == 18665128:
                 self.assertEqual(True, is_sv)
+        reader.close()
 
         reader = cyvcf.Reader(fh('example-4.0.vcf'))
         for var in reader:
@@ -395,6 +415,7 @@ class TestRecord(unittest.TestCase):
                 self.assertEqual(False, is_sv)
             elif var.POS == 1234567:
                 self.assertEqual(False, is_sv)
+        reader.close()
 
     def test_is_sv_precise(self):
         reader = cyvcf.Reader(fh('example-4.1-sv.vcf'))
@@ -412,6 +433,7 @@ class TestRecord(unittest.TestCase):
                 self.assertEqual(False, is_precise)
             elif var.POS == 18665128:
                 self.assertEqual(False, is_precise)
+        reader.close()
 
         reader = cyvcf.Reader(fh('example-4.0.vcf'))
         for var in reader:
@@ -426,6 +448,7 @@ class TestRecord(unittest.TestCase):
                 self.assertEqual(False, is_precise)
             elif var.POS == 1234567:
                 self.assertEqual(False, is_precise)
+        reader.close()
 
     def test_sv_end(self):
         reader = cyvcf.Reader(fh('example-4.1-sv.vcf'))
@@ -443,6 +466,7 @@ class TestRecord(unittest.TestCase):
                 self.assertEqual(12686200, sv_end)
             elif var.POS == 18665128:
                 self.assertEqual(18665204, sv_end)
+        reader.close()
 
         reader = cyvcf.Reader(fh('example-4.0.vcf'))
         for var in reader:
@@ -457,6 +481,7 @@ class TestRecord(unittest.TestCase):
                 self.assertEqual(None, sv_end)
             elif var.POS == 1234567:
                 self.assertEqual(None, sv_end)
+        reader.close()
 
 
 class TestCall(unittest.TestCase):

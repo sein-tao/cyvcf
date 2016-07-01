@@ -7,6 +7,7 @@ import itertools
 import operator
 import codecs
 file=open
+PY3 = sys.version_info > (3,)
 
 from . import utils
 
@@ -37,9 +38,9 @@ HET = 1
 HOM_ALT = 3
 UNKNOWN = 2
 
-cdef _Call _parse_sample(char *sample, list samp_fmt,
+cdef _Call _parse_sample(str sample, list samp_fmt,
                                list samp_fmt_types, list samp_fmt_nums,
-                               char *name, Record rec):
+                               str name, Record rec):
 
     cdef dict sampdict = {x: None for x in samp_fmt}
     cdef list lvals
@@ -95,7 +96,7 @@ cdef _Call _parse_sample(char *sample, list samp_fmt,
             sampdict[fmt] = vals
     return _Call(rec, name, sampdict)
 
-cdef inline list _map(func, list iterable, char *bad='.'):
+cdef inline list _map(func, list iterable, str bad='.'):
     '''``map``, but make bad values None.'''
     return [func(x) if x != bad else None for x in iterable]
 
@@ -178,8 +179,9 @@ class _vcf_metadata_parser(object):
 cdef class _Call(object):
     """ A genotype call, a cell entry in a VCF file"""
 
-    cdef public bytes sample   #NA12878
-    cdef bytes gt_nums  #'0/1'
+    cdef public str sample   #NA12878
+    cdef str gt_nums  #'0/1'
+    # use str instead of bytes for python3 compatability
     # use bytes instead of char * because of C -> Python string complications
     # see: http://docs.cython.org/src/tutorial/strings.html
     cdef public Record site   #instance of Record
@@ -187,7 +189,7 @@ cdef class _Call(object):
     cdef public bint called, phased
     cdef list alleles
 
-    def __cinit__(self, Record site, char *sample, dict data):
+    def __cinit__(self, Record site, str sample, dict data):
         #: The ``Record`` for this ``_Call``
         self.site = site
         #: The sample name
@@ -429,7 +431,7 @@ cdef class Record(object):
               gt_phred_likelihoods
     # use bytes instead of char * because of C -> Python string complications
     # see: http://docs.cython.org/src/tutorial/strings.html
-    cdef readonly bytes CHROM, ID, FORMAT
+    cdef readonly str CHROM, ID, FORMAT
     cdef public REF
     cdef readonly object FILTER, QUAL
     cdef public int POS, start, end, num_hom_ref, num_het, num_hom_alt, \
@@ -438,8 +440,8 @@ cdef class Record(object):
     cdef public dict _sample_indexes
     cdef public bint has_genotypes
 
-    def __cinit__(self, char *CHROM, int POS, char *ID,
-                        char *REF, list ALT, object QUAL=None,
+    def __cinit__(self, str CHROM, int POS, str ID,
+                        str REF, list ALT, object QUAL=None,
                         object FILTER=None, dict INFO=None, object FORMAT=None,
                         dict sample_indexes=None, list samples=None,
                         list gt_bases=None, list gt_types=None,
@@ -670,10 +672,10 @@ cdef class Record(object):
         if self.is_snp:
             # just one alt allele
             alt_allele = self.ALT[0]
-            if ((self.REF == b'A' and alt_allele == b'G') or
-                (self.REF == b'G' and alt_allele == b'A') or
-                (self.REF == b'C' and alt_allele == b'T') or
-                (self.REF == b'T' and alt_allele == b'C')):
+            if ((self.REF == 'A' and alt_allele == 'G') or
+                (self.REF == 'G' and alt_allele == 'A') or
+                (self.REF == 'C' and alt_allele == 'T') or
+                (self.REF == 'T' and alt_allele == 'C')):
                 return True
             else: return False
         else: return False
@@ -785,19 +787,19 @@ cdef class Record(object):
 cdef class Reader(object):
 
     """ Reader for a VCF v 4.1 file, an iterator returning ``Record objects`` """
-    cdef bytes _col_defn_line
-    cdef char _prepend_chr
+    cdef str _col_defn_line
     cdef public object reader
-    cdef bint compressed, prepend_chr
+    cdef bint compressed, _prepend_chr
     cdef public dict metadata, infos, filters, formats,
     cdef readonly dict _sample_indexes
     cdef list _header_lines, samp_data
     cdef public list samples
     cdef object _tabix
-    cdef public object filename
+    cdef public str filename
     cdef int num_samples
+    cdef str encoding
 
-    def __init__(self, fsock=None, filename=None,
+    def __init__(self, fsock=None, str filename=None,
                         bint compressed=False, bint prepend_chr=False, encoding='ascii'):
         """ Create a new Reader for a VCF file.
 
@@ -807,25 +809,26 @@ cdef class Reader(object):
         """
         super(VCFReader, self).__init__()
 
+        self.encoding = encoding
         if not (fsock or filename):
             raise Exception('You must provide at least fsock or filename')
 
+        if filename:
+            self.filename = filename
+            if fsock is None:
+                self.reader = file(filename, 'rb')
+
         if fsock:
             self.reader = fsock
-            if filename is None and hasattr(fsock, 'name'):
-                filename = fsock.name
-                if compressed is None:
-                    compressed = filename.endswith('.gz')
-        elif filename:
-            if compressed is None:
-                compressed = filename.endswith('.gz')
-            self.reader = open(filename, 'rb' if compressed else 'rt')
-        self.filename = filename
-        if compressed:
-            self.reader = gzip.GzipFile(fileobj=self.reader)
-            if sys.version > '3':
-                self.reader = codecs.getreader(encoding)(self.reader)
+            if filename is None:
+                if hasattr(fsock, 'name'):
+                    filename = fsock.name
+            self.filename = filename
 
+        if compressed or (filename and filename.endswith('.gz')):
+            self.reader = gzip.GzipFile(fileobj=self.reader, mode='rb')
+            if PY3:
+                self.reader = codecs.getreader(self.encoding)(self.reader)
 
         #: metadata fields from header
         self.metadata = {}
@@ -870,6 +873,9 @@ cdef class Reader(object):
         parser = _vcf_metadata_parser()
 
         line = next(self.reader)
+        if PY3 and type(line) is bytes:
+            self.reader = codecs.getreader(self.encoding)(self.reader)
+            line = line.decode(self.encoding)
         while line.startswith('##'):
             self._header_lines.append(line)
             line = line.rstrip('\n')
@@ -900,10 +906,10 @@ cdef class Reader(object):
             self.num_samples = len(self.samples)
             self._sample_indexes = dict([(x,i) for (i,x) in enumerate(self.samples)])
         else:
-             sys.exit("Expected column definition line beginning with #.  Not found - exiting.")
+            sys.exit("Expected column definition line beginning with #.  Not found - exiting.")
 
 
-    cdef list _map(Reader self, func, iterable, char *bad='.'):
+    cdef list _map(Reader self, func, iterable, str bad='.'):
         '''``map``, but make bad values None.'''
         return [func(x) if x != bad else None for x in iterable]
 
@@ -921,7 +927,7 @@ cdef class Reader(object):
 
         cdef int i = 0
         cdef int n = len(entries)
-        cdef char *entry_type
+        cdef str entry_type
         cdef list entry
         # for entry in entries:
         for i in xrange(n):
@@ -938,18 +944,18 @@ cdef class Reader(object):
                 else:
                     entry_type = 'String'
 
-            if entry_type == b'Integer':
+            if entry_type == 'Integer':
                 vals = entry[1].split(',')
                 try:
                     val = _map(int, vals)
                 except ValueError:
                     val = _map(float, vals)
-            elif entry_type == b'Float':
+            elif entry_type == 'Float':
                 vals = entry[1].split(',')
                 val = _map(float, vals)
-            elif entry_type == b'Flag':
+            elif entry_type == 'Flag':
                 val = True
-            elif entry_type == b'String':
+            elif entry_type == 'String':
                 if len(entry) > 1:
                     val = entry[1]
                 else:
@@ -971,7 +977,7 @@ cdef class Reader(object):
         return retdict
 
 
-    def _parse_samples(self, Record rec, list samples, char *samp_fmt_s):
+    def _parse_samples(self, Record rec, list samples, str samp_fmt_s):
         '''Parse a sample entry according to the format specified in the FORMAT
         column.'''
         cdef list samp_fmt = samp_fmt_s.split(':')
@@ -980,7 +986,7 @@ cdef class Reader(object):
         cdef list samp_fmt_nums = [None] * n
 
         cdef int i = 0
-        cdef char *fmt
+        cdef str fmt
         # for fmt in samp_fmt:
         for i in xrange(n):
             fmt = samp_fmt[i]
@@ -1065,20 +1071,21 @@ cdef class Reader(object):
         cdef list row = line.split('\t')
 
         #CHROM
-        cdef bytes chrom = row[0]
+        cdef str chrom = row[0]
         if self._prepend_chr:
-            chrom = 'chr' + str(chrom)
+            tmp = 'chr' + str(chrom)
+            chrom = tmp
         # POS
         cdef int pos = int(row[1])
         # ID
-        cdef bytes id = row[2]
+        cdef str id = row[2]
         #REF
-        cdef bytes ref = row[3]
+        cdef str ref = row[3]
         #ALT
         cdef list alt = self._map(str, row[4].split(','))
         #QUAL
         cdef object qual
-        if row[5] == b'.':
+        if row[5] == '.':
             qual = None
         else:
             qual = float(row[5])
@@ -1089,7 +1096,7 @@ cdef class Reader(object):
         #INFO
         cdef dict info = self._parse_info(row[7])
         #FORMAT
-        cdef bytes fmt
+        cdef str fmt
         try:
             fmt = row[8]
         except IndexError:
@@ -1131,6 +1138,12 @@ cdef class Reader(object):
 
         self.reader = self._tabix.fetch(chrom, start, end)
         return self
+
+    def close(self):
+        try:
+            self.reader.close()
+        finally:
+            return
 
 
 class Writer(object):

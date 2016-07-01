@@ -4,4 +4,5 @@ cyvcf.egg-info
 dist
 cyvcf/parser.c
 cyvcf/parser.so
+cyvcf/parser.*.so
 .history
